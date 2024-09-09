@@ -1,0 +1,20 @@
+# Ignore Gradle build directories
+/build/
+/.gradle/
+/out/
+
+# Ignore generated .jar files
+*.jar
+
+# Ignore IDE-specific files (e.g., IntelliJ IDEA, Eclipse)
+.idea/
+*.iml
+.classpath
+.project
+*.class
+
+# Ignore log files and other temporary files
+*.log
+*.tmp
+*.swp
+.DS_Store
