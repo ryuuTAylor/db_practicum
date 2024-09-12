@@ -5,6 +5,7 @@ import common.Tuple;
 import java.io.*;
 import java.util.*;
 import net.sf.jsqlparser.schema.Column;
+
 // import net.sf.jsqlparser.schema.Sequence.Parameter;
 
 public class ScanOperator extends Operator {
@@ -12,7 +13,8 @@ public class ScanOperator extends Operator {
   private BufferedReader reader; // Reader that reads from the table file
   private String filePath; // Path to the file containing the table data
 
-  public ScanOperator(ArrayList<Column> outputSchema, String tableName, boolean useCatalog, String filePath) {
+  public ScanOperator(
+      ArrayList<Column> outputSchema, String tableName, boolean useCatalog, String filePath) {
     super(outputSchema);
 
     // We can either manually provide the filePath, or query from Catalog
@@ -71,5 +73,4 @@ public class ScanOperator extends Operator {
       return null; // Be default, if there's an error, we return null
     }
   }
-
 }
