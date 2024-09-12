@@ -35,6 +35,9 @@ java {
     }
 }
 
+dependencies {
+    implementation 'com.github.jsqlparser:jsqlparser:4.3'
+}
 
 test {
     useJUnitPlatform()
