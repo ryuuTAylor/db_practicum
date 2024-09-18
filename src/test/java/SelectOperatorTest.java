@@ -27,8 +27,7 @@ public class SelectOperatorTest {
 
     // Test SelectOperator with a manually specified file path
     System.out.println("Testing SelectOperator with manual file path:");
-    ScanOperator scanOperator =
-        new ScanOperator(outputSchema, "Sailors", false, "src/test/taylor/data/Sailors");
+    ScanOperator scanOperator = new ScanOperator(outputSchema, "Sailors", false, "src/test/taylor/data/Sailors");
     testSelectOperator(scanOperator, query);
 
     // Test using the SelectOperator with Catalog (using DBCatalog to retrieve the
