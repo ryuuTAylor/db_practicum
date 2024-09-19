@@ -1,6 +1,6 @@
 package common;
 
-import jdk.jshell.spi.ExecutionControl;
+import net.sf.jsqlparser.expression.Alias;
 import net.sf.jsqlparser.expression.Expression;
 import net.sf.jsqlparser.schema.Column;
 import net.sf.jsqlparser.statement.Statement;
@@ -10,8 +10,11 @@ import net.sf.jsqlparser.statement.select.OrderByElement;
 import net.sf.jsqlparser.statement.select.PlainSelect;
 import net.sf.jsqlparser.statement.select.Select;
 import operator.*;
+
+import java.util.HashMap;
 import java.util.List;
 import java.util.ArrayList;
+import java.util.Map;
 
 /**
  * Class to translate a JSQLParser statement into a relational algebra query
@@ -39,6 +42,8 @@ import java.util.ArrayList;
  * 2 student instructions, Section 2.1
  */
 public class QueryPlanBuilder {
+  private Map<String, String> aliasMap = new HashMap<>();
+
   public QueryPlanBuilder() {
   }
 
@@ -50,7 +55,7 @@ public class QueryPlanBuilder {
    * @precondition stmt is a Select having a body that is a PlainSelect
    */
 
-  public Operator buildPlan(Statement stmt) throws ExecutionControl.NotImplementedException {
+  public Operator buildPlan(Statement stmt) {
     // Make sure the statement is a Select
     if (!(stmt instanceof Select)) {
       throw new UnsupportedOperationException("Only SELECT statements are supported.");
@@ -65,7 +70,7 @@ public class QueryPlanBuilder {
     // Step 2: Apply the WHERE clause (Selection) if present
     Expression whereExpression = plainSelect.getWhere();
     if (whereExpression != null) {
-      currentOperator = new SelectOperator(currentOperator, whereExpression); // Apply selection
+      currentOperator = new SelectOperator(currentOperator, resolveAlias(whereExpression)); // Apply selection
     }
 
     // Step 3: Handle JOINs (using left-deep join tree)
@@ -85,12 +90,13 @@ public class QueryPlanBuilder {
 
     // // Step 6: Handle DISTINCT clause
     // if (plainSelect.getDistinct() != null) {
-    //   // If no ORDER BY clause, add SortOperator first
-    //   if (orderByElements == null) {
-    //     currentOperator = new SortOperator(currentOperator, null); // Sort by default columns
-    //   }
-    //   // Add DuplicateEliminationOperator
-    //   currentOperator = new DuplicateEliminationOperator(currentOperator);
+    // // If no ORDER BY clause, add SortOperator first
+    // if (orderByElements == null) {
+    // currentOperator = new SortOperator(currentOperator, null); // Sort by default
+    // columns
+    // }
+    // // Add DuplicateEliminationOperator
+    // currentOperator = new DuplicateEliminationOperator(currentOperator);
     // }
 
     // Step 7: Return the root of the query plan
@@ -109,6 +115,11 @@ public class QueryPlanBuilder {
     // Assuming no aliases and the table name is directly available.
     String tableName = fromItem.toString();
 
+    // if alias exists, add to map
+    if (fromItem.getAlias() != null) {
+      aliasMap.put(fromItem.getAlias().getName(), tableName);
+    }
+
     // Use the ScanOperator, assuming we want to use the catalog for file paths
     ArrayList<Column> outputSchema = new ArrayList<>(); // Create an empty schema (for now)
     return new ScanOperator(outputSchema, tableName, true, null); // Always use the catalog
@@ -126,6 +137,11 @@ public class QueryPlanBuilder {
       FromItem rightTable = join.getRightItem();
       String rightTableName = rightTable.toString();
 
+      // if alias exists, add to map
+      if (rightTable.getAlias() != null) {
+        aliasMap.put(rightTable.getAlias().getName(), rightTableName);
+      }
+
       // Use ScanOperator for the right table in the join
       ArrayList<Column> rightTableSchema = new ArrayList<>(); // Create an empty schema (for now)
       Operator rightChild = new ScanOperator(rightTableSchema, rightTableName, true, null);
@@ -135,9 +151,23 @@ public class QueryPlanBuilder {
       Expression joinCondition = join.getOnExpression();
 
       // Apply JoinOperator (left-deep tree, joining currentOperator with rightChild)
-      currentOperator = new JoinOperator(currentOperator, rightChild, joinCondition);
+      currentOperator = new JoinOperator(currentOperator, rightChild, resolveAlias(joinCondition));
     }
 
     return currentOperator;
+  }
+
+  private Expression resolveAlias(Expression expression) {
+    // check if alias exists and replace alias with correct table name for
+    // processing
+    if (expression instanceof Column) {
+      Column column = (Column) expression;
+      String alias = column.getTable().getName();
+      String actualTableName = aliasMap.get(alias);
+      if (actualTableName != null) {
+        return new Column(column.getTable(), actualTableName);
+      }
+    }
+    return null;
   }
 }
