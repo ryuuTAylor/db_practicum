@@ -29,6 +29,24 @@ public class ScanOperator extends Operator {
     init(); // Call the funciton init() to initialize the BufferedReader for the file
   }
 
+  // public ScanOperator(ArrayList<Column> outputSchema, String tableName) {
+  //   super(outputSchema);
+
+  //   // Get the filePath from DBCatalog
+  //   this.filePath = DBCatalog.getInstance().getFileForTable(tableName).getAbsolutePath();
+
+  //   init(); // Call the funciton init() to initialize the BufferedReader for the file
+  // }
+
+  // // Initialize the reader to open the table file
+  // private void init() {
+  //   try {
+  //     reader = new BufferedReader(new FileReader(filePath));
+  //   } catch (IOException e) {
+  //     e.printStackTrace(); // Handle exceptions
+  //   }
+  // }
+
   // Initialize the reader to open the table file
   private void init() {
     try {
