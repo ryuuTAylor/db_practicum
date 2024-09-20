@@ -1,5 +1,11 @@
 [![Java CI with Gradle](https://github.com/CornellDB/db_practicum/actions/workflows/gradle.yml/badge.svg)](https://github.com/CornellDB/db_practicum/actions/workflows/gradle.yml)
 
+# Group Members
+Avery Willis adw98
+Natalina Putrino njp58
+Taylor Wang tw492
+Andy Li sl2535
+
 # Cornell Database Systems Practicum - CS 4321/5321
 The public repository for Cornell's Database Systems Implementation course (Practicum).
 
