@@ -38,7 +38,7 @@ public class SortOperator extends Operator {
       public int compare(Tuple t1, Tuple t2) {
         for (OrderByElement element : orderByElements) {
           // Assuming the orderByElement gives the index of the column in schema
-          String columnName = element.toString();
+          String columnName = element.getExpression().toString();
           int columnIndex = getColumnIndex(getOutputSchema(), columnName);
           int val1 = t1.getElementAtIndex(columnIndex);
           int val2 = t2.getElementAtIndex(columnIndex);
