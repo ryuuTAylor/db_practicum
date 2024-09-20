@@ -88,16 +88,16 @@ public class QueryPlanBuilder {
       currentOperator = new SortOperator(currentOperator, orderByElements); // Apply sorting
     }
 
-    // // Step 6: Handle DISTINCT clause
-    // if (plainSelect.getDistinct() != null) {
-    // // If no ORDER BY clause, add SortOperator first
-    // if (orderByElements == null) {
-    // currentOperator = new SortOperator(currentOperator, null); // Sort by default
-    // columns
-    // }
-    // // Add DuplicateEliminationOperator
-    // currentOperator = new DuplicateEliminationOperator(currentOperator);
-    // }
+    // Step 6: Handle DISTINCT clause
+    if (plainSelect.getDistinct() != null) {
+      // If no ORDER BY clause, add SortOperator first
+      if (orderByElements == null) {
+        // SortOperator with default sorting, assuming the first column
+        currentOperator = new SortOperator(currentOperator, null);
+      }
+      // Add DuplicateEliminationOperator to eliminate duplicates
+      currentOperator = new DuplicateEliminationOperator(currentOperator.getOutputSchema(), currentOperator);
+    }
 
     // Step 7: Return the root of the query plan
     return currentOperator;
