@@ -2,53 +2,76 @@ package operator;
 
 import common.Tuple;
 import expression.ExpressionVisitorImpl;
+import java.util.ArrayList;
 import net.sf.jsqlparser.expression.Expression;
+import net.sf.jsqlparser.schema.Column;
 
+/** JoinOperator implements the tuple nested loop join algorithm. */
 public class JoinOperator extends Operator {
-    private final Operator rightChild;
     private final Operator leftChild;
+    private final Operator rightChild;
     private final Expression condition;
 
+    private Tuple currentLeftTuple;
+
     public JoinOperator(Operator leftChild, Operator rightChild, Expression condition) {
-        super(leftChild.getOutputSchema());
+        super(mergeSchemas(leftChild.getOutputSchema(), rightChild.getOutputSchema()));
         this.leftChild = leftChild;
         this.rightChild = rightChild;
         this.condition = condition;
+        this.currentLeftTuple = null;
+    }
+
+    private static ArrayList<Column> mergeSchemas(
+            ArrayList<Column> leftSchema, ArrayList<Column> rightSchema) {
+        ArrayList<Column> merged = new ArrayList<>(leftSchema);
+        merged.addAll(rightSchema);
+        return merged;
     }
 
     @Override
     public void reset() {
+        leftChild.reset();
         rightChild.reset();
+        currentLeftTuple = null;
     }
 
     @Override
     public Tuple getNextTuple() {
-        Tuple leftTuple;
-        Tuple rightTuple;
-        // Scan the left (outer) child once
-        while ((leftTuple = leftChild.getNextTuple()) != null) {
-            // Scan the right (inner) child
-            while((rightTuple = rightChild.getNextTuple()) != null) {
-                // Glue the two together
-                String tuples = leftTuple + rightTuple.toString();
-                Tuple gluedTuple = new Tuple(tuples);
-                // If there is a non-null join condition,
-                // the tuple is only returned if it matches the condition
-                if (condition != null) {
-                    ExpressionVisitorImpl visitor = new ExpressionVisitorImpl(gluedTuple, getOutputSchema());
-                    if (visitor.evaluate(condition)){
-                        return gluedTuple;
+        try {
+            while (true) {
+                if (currentLeftTuple == null) {
+                    currentLeftTuple = leftChild.getNextTuple();
+                    if (currentLeftTuple == null) {
+                        return null; // No more tuples from the left table
                     }
+                    rightChild.reset();
                 }
-                // If there is no condition, return cartesian product
-                else {
-                    return gluedTuple;
+
+                Tuple rightTuple = rightChild.getNextTuple();
+                if (rightTuple == null) {
+                    currentLeftTuple = null; // Reset the left tuple and try with the next one
+                    continue;
                 }
-                return null;
+
+                // Merge tuples
+                ArrayList<Integer> mergedElements = new ArrayList<>(currentLeftTuple.getAllElements());
+                mergedElements.addAll(rightTuple.getAllElements());
+                Tuple mergedTuple = new Tuple(mergedElements);
+
+                // Evaluate the join condition
+                if (condition != null) {
+                    ExpressionVisitorImpl visitor = new ExpressionVisitorImpl(mergedTuple, getOutputSchema());
+                    if (visitor.evaluate(condition)) {
+                        return mergedTuple;
+                    }
+                } else {
+                    // Cross product (if no condition is specified)
+                    return mergedTuple;
+                }
             }
-            // Reset inner child for next iteration
-            reset();
+        } catch (Exception e) {
+            throw new RuntimeException("Error in JoinOperator: " + e.getMessage());
         }
-        return null;
-    };
+    }
 }
