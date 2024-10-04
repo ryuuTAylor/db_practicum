@@ -1,173 +1,176 @@
 package common;
 
-import net.sf.jsqlparser.expression.Alias;
-import net.sf.jsqlparser.expression.Expression;
-import net.sf.jsqlparser.schema.Column;
-import net.sf.jsqlparser.statement.Statement;
-import net.sf.jsqlparser.statement.select.FromItem;
-import net.sf.jsqlparser.statement.select.Join;
-import net.sf.jsqlparser.statement.select.OrderByElement;
-import net.sf.jsqlparser.statement.select.PlainSelect;
-import net.sf.jsqlparser.statement.select.Select;
-import operator.*;
-
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
-import java.util.ArrayList;
 import java.util.Map;
+import net.sf.jsqlparser.expression.Expression;
+import net.sf.jsqlparser.expression.operators.conditional.AndExpression;
+import net.sf.jsqlparser.schema.Column;
+import net.sf.jsqlparser.schema.Table;
+import net.sf.jsqlparser.statement.Statement;
+import net.sf.jsqlparser.statement.select.*;
+import operator.*;
 
-/**
- * Class to translate a JSQLParser statement into a relational algebra query
- * plan. For now only
- * works for Statements that are Selects, and specifically PlainSelects. Could
- * implement the visitor
- * pattern on the statement, but doesn't for simplicity as we do not handle
- * nesting or other complex
- * query features.
- *
- * <p>
- * Query plan fixes join order to the order found in the from clause and uses a
- * left deep tree
- * join. Maximally pushes selections on individual relations and evaluates join
- * conditions as early
- * as possible in the join tree. Projections (if any) are not pushed and
- * evaluated in a single
- * projection operator after the last join. Finally, sorting and duplicate
- * elimination are added if
- * needed.
- *
- * <p>
- * For the subset of SQL which is supported as well as assumptions on semantics,
- * see the Project
- * 2 student instructions, Section 2.1
- */
+/** Builds a query plan from a SQL statement. */
 public class QueryPlanBuilder {
-  private Map<String, String> aliasMap = new HashMap<>();
 
-  public QueryPlanBuilder() {
-  }
+  public QueryPlanBuilder() {}
 
   /**
-   * Top level method to translate statement to query plan
+   * Builds the query plan for the provided SQL SELECT statement.
    *
-   * @param stmt statement to be translated
-   * @return the root of the query plan
-   * @precondition stmt is a Select having a body that is a PlainSelect
+   * @param stmt SQL SELECT statement.
+   * @return Root operator of the query plan.
    */
-
   public Operator buildPlan(Statement stmt) {
-    // Make sure the statement is a Select
     if (!(stmt instanceof Select)) {
       throw new UnsupportedOperationException("Only SELECT statements are supported.");
     }
 
-    // Extract the body of the SELECT statement (assuming it's a PlainSelect)
     PlainSelect plainSelect = (PlainSelect) ((Select) stmt).getSelectBody();
 
-    // Step 1: Handle FROM clause (ScanOperators for each table)
-    Operator currentOperator = createFromClausePlan(plainSelect);
+    // Step 1: Handle FROM clause
+    List<Operator> scanOperators = new ArrayList<>();
+    List<String> tableNames = new ArrayList<>();
+    Map<String, String> aliasToTable = new HashMap<>();
+    processFromClause(plainSelect, scanOperators, tableNames, aliasToTable);
 
-    // Step 2: Apply the WHERE clause (Selection) if present
+    // Step 2: Handle WHERE clause
     Expression whereExpression = plainSelect.getWhere();
+    Expression decomposedSelectExpr = null;
+    List<Expression> joinConditions = new ArrayList<>();
     if (whereExpression != null) {
-      currentOperator = new SelectOperator(currentOperator, resolveAlias(whereExpression)); // Apply selection
+      WhereExpressionVisitor visitor = new WhereExpressionVisitor(tableNames);
+      whereExpression.accept(visitor);
+      decomposedSelectExpr = visitor.getSelectExpression();
+      joinConditions = visitor.getJoinExpressions();
     }
 
-    // Step 3: Handle JOINs (using left-deep join tree)
+    // Step 3: Apply selection conditions
+    Map<String, Operator> operatorsMap = new HashMap<>();
+    for (int i = 0; i < tableNames.size(); i++) {
+      String tableName = tableNames.get(i);
+      Operator op = scanOperators.get(i);
+      Expression selectionExpr = null;
+      if (decomposedSelectExpr != null) {
+        ExpressionExtractor extractor = new ExpressionExtractor(tableName);
+        decomposedSelectExpr.accept(extractor);
+        selectionExpr = extractor.getExpression();
+      }
+      if (selectionExpr != null) {
+        op = new SelectOperator(op, selectionExpr);
+      }
+      operatorsMap.put(tableName, op);
+    }
+
+    // Step 4: Build the join tree
+    Operator currentOperator = operatorsMap.get(tableNames.get(0));
+    for (int i = 1; i < tableNames.size(); i++) {
+      String rightTable = tableNames.get(i);
+      Operator rightOperator = operatorsMap.get(rightTable);
+      Expression joinExpr = null;
+      List<Expression> relevantJoins = new ArrayList<>();
+      for (Expression expr : joinConditions) {
+        JoinExpressionExtractor joinExtractor =
+            new JoinExpressionExtractor(getTablesInOperator(currentOperator), rightTable);
+        expr.accept(joinExtractor);
+        if (joinExtractor.isRelevant()) {
+          relevantJoins.add(expr);
+        }
+      }
+      if (!relevantJoins.isEmpty()) {
+        joinExpr = combineExpressions(relevantJoins);
+      }
+      currentOperator = new JoinOperator(currentOperator, rightOperator, joinExpr);
+    }
+
+    // Step 5: Apply projection
+    currentOperator = new ProjectOperator(currentOperator, plainSelect);
+
+    // Step 6: Handle ORDER BY
+    if (plainSelect.getOrderByElements() != null) {
+      currentOperator = new SortOperator(currentOperator, plainSelect.getOrderByElements());
+    }
+
+    // Step 7: Handle DISTINCT
+    if (plainSelect.getDistinct() != null) {
+      currentOperator =
+          new DuplicateEliminationOperator(currentOperator.getOutputSchema(), currentOperator);
+    }
+
+    // Return the root of the query plan
+    return currentOperator;
+  }
+
+  /** Processes the FROM clause to create scan operators for each table. */
+  private void processFromClause(
+      PlainSelect plainSelect,
+      List<Operator> scanOperators,
+      List<String> tableNames,
+      Map<String, String> aliasToTable) {
+
+    // Process the main table in FROM
+    FromItem fromItem = plainSelect.getFromItem();
+    processFromItem(fromItem, scanOperators, tableNames, aliasToTable);
+
+    // Process joins
     List<Join> joins = plainSelect.getJoins();
     if (joins != null) {
-      currentOperator = applyJoins(currentOperator, joins);
-    }
-
-    // Step 4: Apply projection (SELECT clause)
-    currentOperator = new ProjectOperator(currentOperator, plainSelect); // Handle projections
-
-    // Step 5: Handle ORDER BY clause (if present)
-    List<OrderByElement> orderByElements = plainSelect.getOrderByElements();
-    if (orderByElements != null) {
-      currentOperator = new SortOperator(currentOperator, orderByElements); // Apply sorting
-    }
-
-    // Step 6: Handle DISTINCT clause
-    if (plainSelect.getDistinct() != null) {
-      // If no ORDER BY clause, add SortOperator first
-      if (orderByElements == null) {
-        // SortOperator with default sorting, assuming the first column
-        currentOperator = new SortOperator(currentOperator, null);
-      }
-      // Add DuplicateEliminationOperator to eliminate duplicates
-      currentOperator = new DuplicateEliminationOperator(currentOperator.getOutputSchema(), currentOperator);
-    }
-
-    // Step 7: Return the root of the query plan
-    return currentOperator;
-  }
-
-  /**
-   * Step 1: Handle the FROM clause by creating ScanOperators for each table.
-   *
-   * @param plainSelect The parsed SQL statement.
-   * @return The initial operator for the FROM clause.
-   */
-  private Operator createFromClausePlan(PlainSelect plainSelect) {
-    FromItem fromItem = plainSelect.getFromItem(); // This should be the first table in the FROM clause
-
-    // Assuming no aliases and the table name is directly available.
-    String tableName = fromItem.toString();
-
-    // if alias exists, add to map
-    if (fromItem.getAlias() != null) {
-      aliasMap.put(fromItem.getAlias().getName(), tableName);
-    }
-
-    // Use the ScanOperator, assuming we want to use the catalog for file paths
-    ArrayList<Column> outputSchema = new ArrayList<>(); // Create an empty schema (for now)
-    return new ScanOperator(outputSchema, tableName, true, null); // Always use the catalog
-  }
-
-  /**
-   * Step 3: Apply joins in the order they appear, building a left-deep join tree.
-   *
-   * @param currentOperator The current operator (starting with the FROM clause).
-   * @param joins           The list of joins in the query.
-   * @return An operator that incorporates the joins.
-   */
-  private Operator applyJoins(Operator currentOperator, List<Join> joins) {
-    for (Join join : joins) {
-      FromItem rightTable = join.getRightItem();
-      String rightTableName = rightTable.toString();
-
-      // if alias exists, add to map
-      if (rightTable.getAlias() != null) {
-        aliasMap.put(rightTable.getAlias().getName(), rightTableName);
-      }
-
-      // Use ScanOperator for the right table in the join
-      ArrayList<Column> rightTableSchema = new ArrayList<>(); // Create an empty schema (for now)
-      Operator rightChild = new ScanOperator(rightTableSchema, rightTableName, true, null);
-
-      // Get the join condition
-      @SuppressWarnings("deprecation")
-      Expression joinCondition = join.getOnExpression();
-
-      // Apply JoinOperator (left-deep tree, joining currentOperator with rightChild)
-      currentOperator = new JoinOperator(currentOperator, rightChild, resolveAlias(joinCondition));
-    }
-
-    return currentOperator;
-  }
-
-  private Expression resolveAlias(Expression expression) {
-    // check if alias exists and replace alias with correct table name for
-    // processing
-    if (expression instanceof Column) {
-      Column column = (Column) expression;
-      String alias = column.getTable().getName();
-      String actualTableName = aliasMap.get(alias);
-      if (actualTableName != null) {
-        return new Column(column.getTable(), actualTableName);
+      for (Join join : joins) {
+        FromItem joinItem = join.getRightItem();
+        processFromItem(joinItem, scanOperators, tableNames, aliasToTable);
       }
     }
-    return null;
+  }
+
+  /** Processes a single table or alias from the FROM clause. */
+  private void processFromItem(
+      FromItem fromItem,
+      List<Operator> scanOperators,
+      List<String> tableNames,
+      Map<String, String> aliasToTable) {
+    if (fromItem instanceof Table) {
+      Table table = (Table) fromItem;
+      String tableName = table.getName();
+      String alias = table.getAlias() != null ? table.getAlias().getName() : null;
+
+      String schemaTableName = tableName;
+      if (alias != null) {
+        DBCatalog.getInstance().addAlias(alias, tableName);
+        schemaTableName = alias;
+      }
+
+      ArrayList<Column> outputSchema = DBCatalog.getInstance().getSchema(schemaTableName);
+      Operator scanOp = new ScanOperator(outputSchema, schemaTableName, true, null);
+      scanOperators.add(scanOp);
+      tableNames.add(schemaTableName);
+    } else {
+      throw new UnsupportedOperationException("Only table FROM items are supported.");
+    }
+  }
+
+  /** Combines a list of expressions using AND. */
+  private Expression combineExpressions(List<Expression> expressions) {
+    if (expressions == null || expressions.isEmpty()) {
+      return null;
+    }
+    Expression combined = expressions.get(0);
+    for (int i = 1; i < expressions.size(); i++) {
+      combined = new AndExpression(combined, expressions.get(i));
+    }
+    return combined;
+  }
+
+  /** Retrieves the tables referenced in an operator's schema. */
+  private List<String> getTablesInOperator(Operator op) {
+    List<String> tableNames = new ArrayList<>();
+    for (Column col : op.getOutputSchema()) {
+      String tableName = col.getTable().getName();
+      if (!tableNames.contains(tableName)) {
+        tableNames.add(tableName);
+      }
+    }
+    return tableNames;
   }
 }

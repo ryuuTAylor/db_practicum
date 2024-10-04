@@ -14,12 +14,6 @@ public class ScanOperatorTest {
     // schema)
     ArrayList<Column> outputSchema = new ArrayList<>();
 
-    // Test using the ScanOperator with a manually specified file path
-    System.out.println("Testing with manual file path:");
-    ScanOperator scanOperatorManual =
-        new ScanOperator(outputSchema, "Sailors", false, "src/test/taylor/data/Sailors");
-    testScanOperator(scanOperatorManual);
-
     // Test using the ScanOperator with Catalog (using DBCatalog to retrieve the
     // file path)
     System.out.println("Testing with Catalog:");

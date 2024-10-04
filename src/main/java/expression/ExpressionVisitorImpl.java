@@ -2,19 +2,27 @@ package expression;
 
 import common.Tuple;
 import java.util.ArrayList;
-import net.sf.jsqlparser.expression.Expression;
-import net.sf.jsqlparser.expression.ExpressionVisitorAdapter;
-import net.sf.jsqlparser.expression.LongValue;
-import net.sf.jsqlparser.expression.operators.relational.EqualsTo;
+import net.sf.jsqlparser.expression.*;
+import net.sf.jsqlparser.expression.operators.conditional.*;
+import net.sf.jsqlparser.expression.operators.relational.*;
 import net.sf.jsqlparser.schema.Column;
 
-/** The ExpressionVisitorImpl class evaluates SQL WHERE clause expressions on tuples. */
+/**
+ * The ExpressionVisitorImpl class evaluates SQL WHERE clause expressions against a given tuple. It
+ * extends ExpressionVisitorAdapter to traverse and evaluate different types of expressions.
+ */
 public class ExpressionVisitorImpl extends ExpressionVisitorAdapter {
 
   private final Tuple tuple;
   private final ArrayList<Column> schema; // This is to map column names to indices
   private boolean result; // Stores the result of the expression evaluation
 
+  /**
+   * Constructs an ExpressionVisitorImpl with the specified tuple and schema.
+   *
+   * @param tuple The Tuple to evaluate the expression against.
+   * @param schema The schema mapping column names to their indices in the tuple.
+   */
   public ExpressionVisitorImpl(Tuple tuple, ArrayList<Column> schema) {
     this.tuple = tuple;
     this.schema = schema;
@@ -22,9 +30,9 @@ public class ExpressionVisitorImpl extends ExpressionVisitorAdapter {
   }
 
   /**
-   * Evaluate the expression on the tuple.
+   * Evaluates the given SQL expression against the tuple.
    *
-   * @param expression The SQL expression (e.g., WHERE id = 4).
+   * @param expression The SQL expression to evaluate (e.g., WHERE id < 3).
    * @return true if the expression evaluates to true for the tuple, otherwise false.
    */
   public boolean evaluate(Expression expression) {
@@ -32,48 +40,107 @@ public class ExpressionVisitorImpl extends ExpressionVisitorAdapter {
     return result; // Return the final evaluation result
   }
 
+  /**
+   * Visits an EqualsTo expression and evaluates its comparison.
+   *
+   * @param equalsTo The EqualsTo expression to visit.
+   */
   @Override
   public void visit(EqualsTo equalsTo) {
-    // Handle the equality expression (e.g., WHERE id = 4)
-    Expression leftExpression = equalsTo.getLeftExpression();
-    Expression rightExpression = equalsTo.getRightExpression();
-
-    // Check if the left side is a column
-    if (leftExpression instanceof Column) {
-      Column column = (Column) leftExpression;
-      String columnName = column.getColumnName();
-
-      // Map column name to index (assuming schema provides this)
-      int columnIndex = getColumnIndex(columnName);
-
-      // Get the tuple value for the column index
-      int tupleValue = tuple.getElementAtIndex(columnIndex);
-
-      // Now compare the right side value (which could be a LongValue or StringValue)
-      if (rightExpression instanceof LongValue) {
-        LongValue value = (LongValue) rightExpression;
-        result = tupleValue == value.getValue();
-      }
-    }
+    evaluateComparison(equalsTo, (a, b) -> a == b);
   }
 
-  // Helper method to map column name to index using the schema
-  private int getColumnIndex(String columnName) {
-    for (int i = 0; i < schema.size(); i++) {
-      if (schema.get(i).getColumnName().equals(columnName)) {
-        return i;
-      }
-    }
-    throw new RuntimeException("Column not found: " + columnName);
-  }
-
+  /**
+   * Visits a NotEqualsTo expression and evaluates its comparison.
+   *
+   * @param notEqualsTo The NotEqualsTo expression to visit.
+   */
   @Override
-  public void visit(LongValue longValue) {
-    // Handle LongValue
+  public void visit(NotEqualsTo notEqualsTo) {
+    evaluateComparison(notEqualsTo, (a, b) -> a != b);
   }
 
+  /**
+   * Visits a GreaterThan expression and evaluates its comparison.
+   *
+   * @param greaterThan The GreaterThan expression to visit.
+   */
   @Override
-  public void visit(Column column) {
-    // Handle Column (if needed)
+  public void visit(GreaterThan greaterThan) {
+    evaluateComparison(greaterThan, (a, b) -> a > b);
+  }
+
+  /**
+   * Visits a GreaterThanEquals expression and evaluates its comparison.
+   *
+   * @param greaterThanEquals The GreaterThanEquals expression to visit.
+   */
+  @Override
+  public void visit(GreaterThanEquals greaterThanEquals) {
+    evaluateComparison(greaterThanEquals, (a, b) -> a >= b);
+  }
+
+  /**
+   * Visits a MinorThan expression and evaluates its comparison.
+   *
+   * @param minorThan The MinorThan expression to visit.
+   */
+  @Override
+  public void visit(MinorThan minorThan) {
+    evaluateComparison(minorThan, (a, b) -> a < b);
+  }
+
+  /**
+   * Visits a MinorThanEquals expression and evaluates its comparison.
+   *
+   * @param minorThanEquals The MinorThanEquals expression to visit.
+   */
+  @Override
+  public void visit(MinorThanEquals minorThanEquals) {
+    evaluateComparison(minorThanEquals, (a, b) -> a <= b);
+  }
+
+  /**
+   * Visits an AndExpression and evaluates the logical AND of its left and right expressions.
+   *
+   * @param andExpr The AndExpression to visit.
+   */
+  @Override
+  public void visit(AndExpression andExpr) {
+    ExpressionVisitorImpl leftVisitor = new ExpressionVisitorImpl(tuple, schema);
+    boolean leftResult = leftVisitor.evaluate(andExpr.getLeftExpression());
+
+    if (!leftResult) {
+      result = false;
+      return;
+    }
+
+    ExpressionVisitorImpl rightVisitor = new ExpressionVisitorImpl(tuple, schema);
+    boolean rightResult = rightVisitor.evaluate(andExpr.getRightExpression());
+
+    result = rightResult;
+  }
+
+  /** An interface for comparing two integer values. */
+  private interface Comparator {
+    boolean compare(int a, int b);
+  }
+
+  /**
+   * Evaluates a binary expression using the provided comparator.
+   *
+   * @param expr The BinaryExpression to evaluate.
+   * @param comparator The Comparator defining the comparison logic.
+   */
+  private void evaluateComparison(BinaryExpression expr, Comparator comparator) {
+    ExpressionEvaluator leftEval = new ExpressionEvaluator(tuple, schema);
+    expr.getLeftExpression().accept(leftEval);
+    int leftValue = leftEval.getValue();
+
+    ExpressionEvaluator rightEval = new ExpressionEvaluator(tuple, schema);
+    expr.getRightExpression().accept(rightEval);
+    int rightValue = rightEval.getValue();
+
+    result = comparator.compare(leftValue, rightValue);
   }
 }

@@ -3,51 +3,40 @@ package operator;
 import common.DBCatalog;
 import common.Tuple;
 import java.io.*;
-import java.util.*;
+import java.util.ArrayList;
 import net.sf.jsqlparser.schema.Column;
 
-// import net.sf.jsqlparser.schema.Sequence.Parameter;
-
+/**
+ * The ScanOperator reads tuples from a table by scanning a data file. It extends Operator to
+ * provide tuples sequentially from the table data.
+ */
 public class ScanOperator extends Operator {
 
   private BufferedReader reader; // Reader that reads from the table file
   private String filePath; // Path to the file containing the table data
 
+  /**
+   * Constructs a ScanOperator with the specified schema, table name, catalog usage, and file path.
+   *
+   * @param outputSchema The schema of the tuples to be read.
+   * @param tableName The name of the table to scan.
+   * @param useCatalog Flag indicating whether to use the catalog to find the file path.
+   * @param filePath The file path to the table data (used if useCatalog is false).
+   */
   public ScanOperator(
       ArrayList<Column> outputSchema, String tableName, boolean useCatalog, String filePath) {
     super(outputSchema);
 
-    // We can either manually provide the filePath, or query from Catalog
     if (useCatalog) {
-      // Get the filePath from DBCatalog
       this.filePath = DBCatalog.getInstance().getFileForTable(tableName).getAbsolutePath();
     } else {
-      // Use the manually provided filePath instead
       this.filePath = filePath;
     }
 
-    init(); // Call the funciton init() to initialize the BufferedReader for the file
+    init();
   }
 
-  // public ScanOperator(ArrayList<Column> outputSchema, String tableName) {
-  //   super(outputSchema);
-
-  //   // Get the filePath from DBCatalog
-  //   this.filePath = DBCatalog.getInstance().getFileForTable(tableName).getAbsolutePath();
-
-  //   init(); // Call the funciton init() to initialize the BufferedReader for the file
-  // }
-
-  // // Initialize the reader to open the table file
-  // private void init() {
-  //   try {
-  //     reader = new BufferedReader(new FileReader(filePath));
-  //   } catch (IOException e) {
-  //     e.printStackTrace(); // Handle exceptions
-  //   }
-  // }
-
-  // Initialize the reader to open the table file
+  /** Initializes the BufferedReader to read from the specified file path. */
   private void init() {
     try {
       reader = new BufferedReader(new FileReader(filePath));
@@ -56,39 +45,35 @@ public class ScanOperator extends Operator {
     }
   }
 
+  /** Resets the ScanOperator by closing and reopening the file reader. */
   @Override
   public void reset() {
     try {
-      // Close the Existing Reader if exists
       if (reader != null) {
         reader.close();
       }
-
-      // Reinitialize everything
-      init(); // Reopen the file and set up a new BufferedReader
-
+      init();
     } catch (IOException e) {
       e.printStackTrace(); // Handle exceptions
     }
   }
 
+  /**
+   * Retrieves the next tuple from the table by reading the next line from the file.
+   *
+   * @return The next Tuple, or null if the end of the file is reached.
+   */
   @Override
   public Tuple getNextTuple() {
     try {
-      // Read the next line from the file
       String line = reader.readLine();
-
-      // We should return next Tuple, or null if we are at the end
       if (line == null) {
         return null;
       }
-
-      // Use the provided common.Tuple class
       return new Tuple(line);
-
     } catch (IOException e) {
-      e.printStackTrace(); // Handle exceptions
-      return null; // Be default, if there's an error, we return null
+      e.printStackTrace();
+      return null;
     }
   }
 }

@@ -1,0 +1,6 @@
+5: SELECT * FROM Sailors WHERE Sailors.B >= Sailors.C;
+6: SELECT Sailors.A FROM Sailors WHERE Sailors.B >= Sailors.C;
+7: SELECT Sailors.A FROM Sailors WHERE Sailors.B >= Sailors.C AND Sailors.B < Sailors.C;
+11: SELECT * FROM Sailors, Reserves WHERE Sailors.A = Reserves.G AND Sailors.C > Sailors.B;
+27: SELECT * FROM TestTable2 WHERE TestTable2.K >= TestTable2.L AND TestTable2.L <= TestTable2.M;
+40: SELECT * FROM Sailors S, Reserves R WHERE S.A = R.G AND S.C > S.B ORDER BY S.A;

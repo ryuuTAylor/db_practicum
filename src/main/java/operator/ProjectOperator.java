@@ -1,77 +1,139 @@
 package operator;
 
 import common.Tuple;
-
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import net.sf.jsqlparser.expression.Expression;
 import net.sf.jsqlparser.schema.Column;
-import net.sf.jsqlparser.statement.select.AllColumns;
-import net.sf.jsqlparser.statement.select.PlainSelect;
-import net.sf.jsqlparser.statement.select.SelectItem;
-import net.sf.jsqlparser.statement.select.SelectExpressionItem;
+import net.sf.jsqlparser.statement.select.*;
 
+/**
+ * The ProjectOperator selects specific columns from tuples based on the SELECT clause of a query.
+ * It extends Operator to process and return tuples with only the desired columns.
+ */
 public class ProjectOperator extends Operator {
-    private final Operator child;
-    private final PlainSelect plainSelect;
-    private final ArrayList<Column> schema;
+  private final Operator child;
+  private final List<SelectItem> selectItems;
+  private final ArrayList<Column> inputSchema;
 
-    // query plan builder passes in a plain select
-    // where child is either SelectOperator (if WHERE clause)
-    // or ScanOperator (if no where clause)
-    public ProjectOperator(Operator child, PlainSelect plainSelect) {
-        super(child.outputSchema);
-        this.child = child;
-        this.plainSelect = plainSelect;
-        this.schema = this.outputSchema;
-    }
+  /**
+   * Constructs a ProjectOperator with the specified child operator and PlainSelect query.
+   *
+   * @param child The child Operator providing input tuples.
+   * @param plainSelect The PlainSelect object representing the SELECT clause.
+   */
+  public ProjectOperator(Operator child, PlainSelect plainSelect) {
+    super(getProjectedSchema(child.getOutputSchema(), plainSelect.getSelectItems()));
+    this.child = child;
+    this.selectItems = plainSelect.getSelectItems();
+    this.inputSchema = child.getOutputSchema();
+  }
 
-    public Tuple extractedTuple(Tuple tuple, PlainSelect plainSelect) {
-        List<SelectItem> selectItems = plainSelect.getSelectItems();
-        List extractedColumns = new ArrayList<Integer>();
-        for (SelectItem selectItem : selectItems) {
-            if (selectItem instanceof AllColumns) {
-                // add all columns to extractedColumns
-                return tuple;
-            } else if (selectItem instanceof SelectExpressionItem) {
-                // can assume selectItem's expression is column
-                Column column = (Column) ((SelectExpressionItem) selectItem).getExpression();
-
-                String columnName = column.getColumnName();
-
-                // Map column name to index (assuming schema provides this)
-                int columnIndex = getColumnIndex(schema, columnName);
-
-                // Get the tuple value for the column index
-                int tupleValue = tuple.getElementAtIndex(columnIndex);
-
-                // add to extracted columns
-                extractedColumns.add(tupleValue);
-            }
+  /**
+   * Determines the schema of the projected output based on the SELECT items.
+   *
+   * @param inputSchema The schema of the input tuples.
+   * @param selectItems The list of SelectItems from the SELECT clause.
+   * @return An ArrayList containing the projected schema.
+   * @throws UnsupportedOperationException If the SELECT item type is unsupported.
+   */
+  private static ArrayList<Column> getProjectedSchema(
+      ArrayList<Column> inputSchema, List<SelectItem> selectItems) {
+    ArrayList<Column> projectedSchema = new ArrayList<>();
+    for (SelectItem item : selectItems) {
+      if (item instanceof AllColumns) {
+        projectedSchema.addAll(inputSchema);
+        break;
+      } else if (item instanceof SelectExpressionItem) {
+        Expression expr = ((SelectExpressionItem) item).getExpression();
+        if (expr instanceof Column) {
+          Column col = (Column) expr;
+          projectedSchema.add(col);
+        } else {
+          throw new UnsupportedOperationException("Only columns are supported in SELECT clause.");
         }
-        // return extracted columns as a Tuple
-        return new Tuple((ArrayList<Integer>) extractedColumns);
+      } else {
+        throw new UnsupportedOperationException("Unsupported SELECT item.");
+      }
+    }
+    return projectedSchema;
+  }
+
+  /** Resets the operator by resetting its child operator. */
+  @Override
+  public void reset() {
+    child.reset();
+  }
+
+  /**
+   * Retrieves the next projected tuple based on the SELECT clause.
+   *
+   * @return The next projected Tuple, or null if no more tuples are available.
+   * @throws UnsupportedOperationException If the SELECT clause contains unsupported expressions.
+   */
+  @Override
+  public Tuple getNextTuple() {
+    Tuple tuple;
+    if ((tuple = child.getNextTuple()) != null) {
+      return extractTuple(tuple);
+    }
+    return null;
+  }
+
+  /**
+   * Extracts the required columns from the input tuple to form the projected tuple.
+   *
+   * @param tuple The input Tuple to extract values from.
+   * @return A new Tuple containing only the projected values.
+   * @throws UnsupportedOperationException If the SELECT clause contains unsupported expressions.
+   */
+  private Tuple extractTuple(Tuple tuple) {
+    ArrayList<Integer> extractedValues = new ArrayList<>();
+
+    if (selectItems.size() == 1 && selectItems.get(0) instanceof AllColumns) {
+      // SELECT *
+      return tuple;
     }
 
-    // Helper method to map column name to index using the schema
-    private static int getColumnIndex(ArrayList<Column> schema, String columnName) {
-        for (int i = 0; i < schema.size(); i++) {
-            if (schema.get(i).getColumnName().equals(columnName)) {
-                return i;
-            }
+    for (SelectItem item : selectItems) {
+      if (item instanceof SelectExpressionItem) {
+        Expression expr = ((SelectExpressionItem) item).getExpression();
+        if (expr instanceof Column) {
+          Column col = (Column) expr;
+          String columnName = col.getColumnName();
+          String tableName = col.getTable() != null ? col.getTable().getName() : null;
+          int index = getColumnIndex(tableName, columnName);
+          extractedValues.add(tuple.getElementAtIndex(index));
+        } else {
+          throw new UnsupportedOperationException("Only columns are supported in SELECT clause.");
         }
-        throw new RuntimeException("Column not found: " + columnName);
+      } else {
+        throw new UnsupportedOperationException("Unsupported SELECT item.");
+      }
     }
 
-    @Override
-    public Tuple getNextTuple() {
-        Tuple tuple;
-        if ((tuple = child.getNextTuple()) != null) {
-            return extractedTuple(tuple, plainSelect);
-        }
-        return null;
-    }
+    return new Tuple(extractedValues);
+  }
 
-    @Override
-    public void reset() {
-        child.reset();
+  /**
+   * Retrieves the index of a column in the input schema based on table and column names.
+   *
+   * @param tableName The name of the table containing the column.
+   * @param columnName The name of the column.
+   * @return The index of the column in the input schema.
+   * @throws RuntimeException If the column is not found in the input schema.
+   */
+  private int getColumnIndex(String tableName, String columnName) {
+    for (int i = 0; i < inputSchema.size(); i++) {
+      Column col = inputSchema.get(i);
+      String colTableName = col.getTable() != null ? col.getTable().getName() : null;
+      String colName = col.getColumnName();
+
+      if ((tableName == null || tableName.equals(colTableName)) && columnName.equals(colName)) {
+        return i;
+      }
     }
+    throw new RuntimeException(
+        "Column not found: " + (tableName != null ? tableName + "." : "") + columnName);
+  }
 }

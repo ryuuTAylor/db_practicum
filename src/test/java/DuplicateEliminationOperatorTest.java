@@ -6,10 +6,11 @@ import net.sf.jsqlparser.parser.CCJSqlParserUtil;
 import net.sf.jsqlparser.schema.Column;
 import net.sf.jsqlparser.statement.select.OrderByElement;
 import net.sf.jsqlparser.statement.select.PlainSelect;
+import operator.DuplicateEliminationOperator;
 import operator.ScanOperator;
 import operator.SortOperator;
 
-public class SortOperatorTest {
+public class DuplicateEliminationOperatorTest {
   public static void main(String[] args) throws Exception {
     // Set the data directory
     DBCatalog.getInstance().setDataDirectory("src/test/taylor");
@@ -20,8 +21,8 @@ public class SortOperatorTest {
     // Create a ScanOperator
     ScanOperator scanOperator = new ScanOperator(sailorsSchema, "Sailors", true, null);
 
-    // Define ORDER BY clause (e.g., ORDER BY B)
-    String orderByClause = "SELECT * FROM Sailors ORDER BY B";
+    // Define ORDER BY clause to sort the input (e.g., ORDER BY A, B, C)
+    String orderByClause = "SELECT * FROM Sailors ORDER BY A, B, C";
     PlainSelect plainSelect =
         (PlainSelect)
             ((net.sf.jsqlparser.statement.select.Select) CCJSqlParserUtil.parse(orderByClause))
@@ -31,17 +32,21 @@ public class SortOperatorTest {
     // Create a SortOperator
     SortOperator sortOperator = new SortOperator(scanOperator, orderByElements);
 
-    // Test the SortOperator
+    // Create a DuplicateEliminationOperator
+    DuplicateEliminationOperator dupElimOperator =
+        new DuplicateEliminationOperator(sortOperator.getOutputSchema(), sortOperator);
+
+    // Test the DuplicateEliminationOperator
     Tuple tuple;
-    while ((tuple = sortOperator.getNextTuple()) != null) {
-      System.out.println("Sorted Tuple: " + tuple);
+    while ((tuple = dupElimOperator.getNextTuple()) != null) {
+      System.out.println("Unique Tuple: " + tuple);
     }
 
     // Reset and test again
     System.out.println("After reset:");
-    sortOperator.reset();
-    while ((tuple = sortOperator.getNextTuple()) != null) {
-      System.out.println("Sorted Tuple after reset: " + tuple);
+    dupElimOperator.reset();
+    while ((tuple = dupElimOperator.getNextTuple()) != null) {
+      System.out.println("Unique Tuple after reset: " + tuple);
     }
   }
 }
