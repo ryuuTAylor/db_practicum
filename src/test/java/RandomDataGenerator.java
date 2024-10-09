@@ -1,15 +1,14 @@
 import common.Tuple;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
-import java.util.random.*;
 
 public class RandomDataGenerator {
     public static void main(String[] args) {
 
         // Creating a table with 5000 rows and 4 columns
         int numAttributes = 4;
-        // int numOfTuples = 5000;
-        int numOfTuples = 50;
+        int numOfTuples = 5000;
+        // int numOfTuples = 50;
         int intBytes = 4 * numAttributes; // attributes are going to be integers
         int capacity = intBytes * numOfTuples;
 
