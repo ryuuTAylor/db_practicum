@@ -38,6 +38,8 @@ public class JoinOperatorTest {
 
         // Test
         String query = "SELECT Sailors.sid, Sailors.age, Sailors.rating, Reservations.rid, Reservations.bid FROM Sailors LEFT JOIN Reservations ON Sailors.sid = Reservations.sid";
+        String query2 = "SELECT Sailors.sid, Sailors.age, Sailors.rating, Reservations.rid, Reservations.bid FROM Sailors, Reservations WHERE Sailors.sid = Reservations.sid";
+        String aliasQuery = "SELECT S.sid, S.age, S.rating, R.rid, R.bid FROM Sailors S LEFT JOIN Reservations R ON S.sid = R.sid";
 
         // Test using the ScanOperator with a manually specified file path
         System.out.println("Testing with manual file path:");
@@ -47,6 +49,8 @@ public class JoinOperatorTest {
                 "src/test/taylor/data/Reservations");
 
         testJoinOperator(joinOperatorManual1, joinOperatorManual2, query);
+        testJoinOperator(joinOperatorManual1, joinOperatorManual2, query2);
+        testJoinOperator(joinOperatorManual1, joinOperatorManual2, aliasQuery);
     }
 
     private static void testJoinOperator(ScanOperator leftChild, ScanOperator rightChild, String query) {
@@ -58,6 +62,7 @@ public class JoinOperatorTest {
             JoinOperator joinOperator = null;
 
             List<Join> joins = plainSelect.getJoins();
+            System.out.println(joins.size());
             if (joins != null && !joins.isEmpty()) {
                 Join join = joins.get(0);
                 Collection<Expression> joinConditions = join.getOnExpressions();
