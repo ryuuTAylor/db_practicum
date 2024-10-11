@@ -5,6 +5,7 @@ Avery Willis adw98
 Natalina Putrino njp58
 Taylor Wang tw492
 Andy Li sl2535
+Daniel Cao dyc33
 
 # P2 Checkpoint Progress
 So far, for P2, our group debugged our P1 code so that all of the test-case queries passed. With our resolved P1 code, we have also begun work with P2. Specifically, we have coded our random data generator, and have begun implementing TupleReader and TupleWriter. There are bugs we are currently addressing regarding our TupleReader and TupleWriter implementation. We also checked with the instructors ahead of time to ensure that our current progress is a sufficient submission for the P2 Checkpoint. We plan on finishing the rest of the P2 project by the original deadline after fall break. 
